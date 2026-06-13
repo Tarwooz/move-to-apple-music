@@ -78,6 +78,6 @@ npm run dev
 ## 注意事项
 
 - 歌单须为**公开**歌单
-- DeepSeek API Key 仅在本地使用，不会上传；用完记得清空输入框
+- DeepSeek API Key 仅在本地使用，不会上传；用完记得去 DeepSeek 控制台删除该 Key
 - 匹配缓存存储在浏览器 localStorage（`am-cache-v1`），换浏览器/设备需重新搜索
 - 导出的 CSV 使用 UTF-8 BOM 编码，可直接用 Excel 打开
