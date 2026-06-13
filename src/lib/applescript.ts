@@ -67,3 +67,53 @@ export async function checkMusicAppRunning(): Promise<boolean> {
     return false;
   }
 }
+
+export async function listUserPlaylists(): Promise<{ name: string; trackCount: number }[]> {
+  const script = `
+tell application "Music"
+  set output to ""
+  repeat with pl in (every user playlist)
+    set output to output & (name of pl) & "|||" & (count of tracks of pl) & "\n"
+  end repeat
+  return output
+end tell`;
+  const { stdout } = await execFileAsync('osascript', ['-e', script], { timeout: 30000 });
+  return stdout
+    .trim()
+    .split('\n')
+    .filter((l) => l.includes('|||'))
+    .map((l) => {
+      const [name, countStr] = l.split('|||');
+      return { name: name.trim(), trackCount: parseInt(countStr.trim(), 10) || 0 };
+    });
+}
+
+export async function mergePlaylistsInto(sourceNames: string[], targetName: string): Promise<number> {
+  const safeName = escapeAppleScript(targetName);
+  const blocks = sourceNames
+    .map((src) => {
+      const s = escapeAppleScript(src);
+      return `
+  try
+    repeat with t in (every track of (first user playlist whose name is "${s}"))
+      duplicate t to newPL
+      set merged to merged + 1
+    end repeat
+  end try`;
+    })
+    .join('\n');
+
+  const script = `
+tell application "Music"
+  try
+    delete (first user playlist whose name is "${safeName}")
+  end try
+  set newPL to make new user playlist with properties {name:"${safeName}"}
+  set merged to 0
+  ${blocks}
+  return merged
+end tell`;
+
+  const { stdout } = await execFileAsync('osascript', ['-e', script], { timeout: 180000 });
+  return parseInt(stdout.trim(), 10) || 0;
+}
