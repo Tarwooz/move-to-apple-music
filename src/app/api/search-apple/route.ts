@@ -5,7 +5,6 @@ import { randomUUID } from 'crypto';
 
 const MATCH_THRESHOLD = 0.7;
 const UNCERTAIN_THRESHOLD = 0.4;
-const CONCURRENCY = 5;
 
 async function searchTrack(track: SourceTrack): Promise<TrackMatch> {
   const query = buildQuery(track);
@@ -40,12 +39,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const results: TrackMatch[] = [];
-    for (let i = 0; i < tracks.length; i += CONCURRENCY) {
-      if (i > 0) await new Promise((r) => setTimeout(r, 1000));
-      const batch = await Promise.all(tracks.slice(i, i + CONCURRENCY).map(searchTrack));
-      results.push(...batch);
-    }
+    const results = await Promise.all(tracks.map(searchTrack));
     return NextResponse.json({ matches: results });
   } catch (e: any) {
     return NextResponse.json({ error: `搜索失败: ${e.message}` }, { status: 500 });

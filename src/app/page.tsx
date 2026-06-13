@@ -8,10 +8,10 @@ type Step = 'input' | 'searching' | 'preview';
 type Tab = 'import' | 'merge' | 'help';
 type MusicPlaylist = { name: string; trackCount: number };
 
-const SEARCH_BATCH = 20;
+const SEARCH_BATCH = 5;  // matches server CONCURRENCY — keeps each API call under 2s
 const AI_BATCH = 20;
 const CSV_CHUNK = 200;
-const BATCH_DELAY = 2000; // ms between search batches (frontend rate limiting)
+const batchDelay = () => 1500 + Math.random() * 1500; // 1.5–3s random delay
 
 // ── localStorage cache helpers ────────────────────────────────────────────────
 const LS_CACHE = 'am-cache-v1';
@@ -127,8 +127,7 @@ export default function Home() {
 
         let apiResults: TrackMatch[] = [];
         if (uncached.length) {
-          // Delay before each API batch (except the first) for rate limiting
-          if (allMatches.length > 0) await new Promise((r) => setTimeout(r, BATCH_DELAY));
+          if (allMatches.length > 0) await new Promise((r) => setTimeout(r, batchDelay()));
 
           const res2 = await fetch('/api/search-apple', {
             method: 'POST',
@@ -138,7 +137,7 @@ export default function Home() {
           const data2 = await res2.json();
           if (!res2.ok) throw new Error(data2.error);
           apiResults = data2.matches;
-          mergeLSCache(apiResults);
+          mergeLSCache(apiResults.filter((m) => m.selectedCandidate));
         }
 
         // Interleave cache hits and API results in original order
@@ -219,6 +218,7 @@ export default function Home() {
     setRetryProgress({ done: 0, total: toRetry.length });
     try {
       for (let i = 0; i < toRetry.length; i += SEARCH_BATCH) {
+        if (i > 0) await new Promise((r) => setTimeout(r, batchDelay()));
         const batch = toRetry.slice(i, i + SEARCH_BATCH);
         const res = await fetch('/api/search-apple', {
           method: 'POST',
