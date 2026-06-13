@@ -66,12 +66,16 @@ export default function Home() {
   const [textModal, setTextModal] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // ── filter + retry popover ────────────────────────────────────────
+  // ── filter + retry/ai popovers ────────────────────────────────────
   const [filterStatus, setFilterStatus] = useState<MatchStatus | 'all'>('all');
   const [retryPopoverOpen, setRetryPopoverOpen] = useState(false);
   const [retryIncUncertain, setRetryIncUncertain] = useState(false);
   const [retryIncFailed, setRetryIncFailed] = useState(true);
   const retryPopoverRef = useRef<HTMLDivElement>(null);
+  const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
+  const [aiIncUncertain, setAiIncUncertain] = useState(false);
+  const [aiIncFailed, setAiIncFailed] = useState(true);
+  const aiPopoverRef = useRef<HTMLDivElement>(null);
 
   // ── merge tab state ───────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('import');
@@ -95,17 +99,15 @@ export default function Home() {
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [matches]);
 
-  // Close retry popover on outside click
+  // Close popovers on outside click
   useEffect(() => {
-    if (!retryPopoverOpen) return;
     const handler = (e: MouseEvent) => {
-      if (retryPopoverRef.current && !retryPopoverRef.current.contains(e.target as Node)) {
-        setRetryPopoverOpen(false);
-      }
+      if (retryPopoverRef.current && !retryPopoverRef.current.contains(e.target as Node)) setRetryPopoverOpen(false);
+      if (aiPopoverRef.current && !aiPopoverRef.current.contains(e.target as Node)) setAiPopoverOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [retryPopoverOpen]);
+  }, []);
 
   // ── import logic ──────────────────────────────────────────────────
   const fetchPlaylist = useCallback(async () => {
@@ -175,11 +177,11 @@ export default function Home() {
     }
   }, [playlistUrl]);
 
-  const runAiAssist = useCallback(async () => {
+  const runAiAssist = useCallback(async (statuses: MatchStatus[]) => {
     if (!deepseekKey) { setError('请先输入 DeepSeek API Key'); return; }
     setAiRunning(true);
     setError('');
-    const failedMatches = matches.filter((m) => m.status === 'failed' || m.status === 'uncertain');
+    const failedMatches = matches.filter((m) => statuses.includes(m.status));
     setAiProgress({ done: 0, total: failedMatches.length });
     try {
       const warnings: string[] = [];
@@ -469,28 +471,11 @@ export default function Home() {
             {/* Preview */}
             {step === 'preview' && playlist && (
               <div className="space-y-3">
-                <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] p-5 flex items-center gap-4">
-                  {playlist.coverUrl
-                    ? <img src={playlist.coverUrl} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0 shadow-sm" />
-                    : <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#FA2D55] to-[#FF6B9D] flex-shrink-0" />
-                  }
-                  <div className="min-w-0 flex-1">
-                    <input
-                      type="text"
-                      value={playlistName}
-                      onChange={(e) => setPlaylistName(e.target.value)}
-                      className="text-[18px] font-bold text-[#1D1D1F] focus:outline-none bg-transparent w-full border-b border-dashed border-transparent focus:border-[#E5E5EA]"
-                    />
-                    {playlist.description && <p className="text-[12px] text-[#AEAEB2] mt-0.5 truncate">{playlist.description}</p>}
-                  </div>
-                  <button onClick={() => { setStep('input'); setMatches([]); setPlaylist(null); }} className="text-[12px] text-[#AEAEB2] hover:text-[#6E6E73] flex-shrink-0 transition-colors">
-                    重新输入
-                  </button>
-                </div>
-
                 {/* Stats bar */}
                 <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] px-5 py-3.5 flex items-center gap-2 flex-wrap">
                   {/* Clickable filter pills */}
+                  <button onClick={() => { setStep('input'); setMatches([]); setPlaylist(null); setFilterStatus('all'); }} className="cursor-pointer text-[11px] text-[#AEAEB2] hover:text-[#6E6E73] transition-colors mr-1">← 重新输入</button>
+                  <div className="w-px h-4 bg-[#E5E5EA]" />
                   <FilterPill label="共" value={stats.total} active={filterStatus === 'all'} onClick={() => setFilterStatus('all')} />
                   <div className="w-px h-4 bg-[#E5E5EA]" />
                   <FilterPill label="已匹配" value={stats.matched} color="text-emerald-500" active={filterStatus === 'matched' || filterStatus === 'manual'} onClick={() => setFilterStatus(filterStatus === 'matched' ? 'all' : 'matched')} />
@@ -563,14 +548,43 @@ export default function Home() {
                     )}
 
                     {(stats.uncertain > 0 || stats.failed > 0) && (
-                      <button
-                        onClick={runAiAssist}
-                        disabled={aiRunning || retrying || !deepseekKey}
-                        title={!deepseekKey ? '请先输入 DeepSeek API Key' : ''}
-                        className="text-[12px] px-3.5 py-1.5 bg-[#7F56D9] hover:bg-[#6941C6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
-                      >
-                        {aiRunning ? `AI 搜索中 ${aiProgress.done}/${aiProgress.total}...` : `AI 辅助搜索（${stats.uncertain + stats.failed} 首）`}
-                      </button>
+                      <div className="relative" ref={aiPopoverRef}>
+                        <button
+                          onClick={() => setAiPopoverOpen((o) => !o)}
+                          disabled={aiRunning || retrying || !deepseekKey}
+                          title={!deepseekKey ? '请先输入 DeepSeek API Key' : ''}
+                          className="cursor-pointer text-[12px] px-3.5 py-1.5 bg-[#7F56D9] hover:bg-[#6941C6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
+                        >
+                          {aiRunning ? `AI 搜索中 ${aiProgress.done}/${aiProgress.total}...` : 'AI 辅助搜索 ▾'}
+                        </button>
+                        {aiPopoverOpen && !aiRunning && (
+                          <div className="absolute right-0 bottom-full mb-2 w-52 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-[#F0F0F5] p-3 z-30">
+                            <p className="text-[11px] font-semibold text-[#6E6E73] uppercase tracking-wide mb-2">选择要 AI 搜索的状态</p>
+                            <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+                              <input type="checkbox" checked={aiIncFailed} onChange={(e) => setAiIncFailed(e.target.checked)} className="accent-[#7F56D9]" />
+                              <span className="text-[13px] text-[#1D1D1F]">未找到</span>
+                              <span className="ml-auto text-[11px] text-[#AEAEB2]">{stats.failed} 首</span>
+                            </label>
+                            <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+                              <input type="checkbox" checked={aiIncUncertain} onChange={(e) => setAiIncUncertain(e.target.checked)} className="accent-[#7F56D9]" />
+                              <span className="text-[13px] text-[#1D1D1F]">待确认</span>
+                              <span className="ml-auto text-[11px] text-[#AEAEB2]">{stats.uncertain} 首</span>
+                            </label>
+                            <button
+                              onClick={() => {
+                                const statuses: MatchStatus[] = [];
+                                if (aiIncFailed) statuses.push('failed');
+                                if (aiIncUncertain) statuses.push('uncertain');
+                                if (statuses.length) { runAiAssist(statuses); setAiPopoverOpen(false); }
+                              }}
+                              disabled={!aiIncFailed && !aiIncUncertain}
+                              className="mt-2 w-full text-[12px] py-2 bg-[#7F56D9] hover:bg-[#6941C6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors cursor-pointer"
+                            >
+                              开始 AI 搜索
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
