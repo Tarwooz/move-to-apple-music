@@ -29,11 +29,9 @@ interface Props {
   onSelectCandidate: (matchId: string, candidate: AppleMusicTrack | null) => void;
   onSkip: (matchId: string) => void;
   onManualSearch: (matchId: string, query: string) => Promise<void>;
-  selected?: boolean;
-  onToggleSelect?: () => void;
 }
 
-export default function TrackRow({ match, index, onSelectCandidate, onSkip, onManualSearch, selected, onToggleSelect }: Props) {
+export default function TrackRow({ match, index, onSelectCandidate, onSkip, onManualSearch }: Props) {
   const { source, status, candidates, selectedCandidate, aiSuggestion } = match;
   const [searching, setSearching] = useState(false);
   const [useTitle, setUseTitle] = useState(true);
@@ -59,21 +57,8 @@ export default function TrackRow({ match, index, onSelectCandidate, onSkip, onMa
 
   return (
     <tr className={`group border-b border-[#F0F0F5] transition-colors hover:bg-[#FAFAFA] ${isSkipped ? 'opacity-40' : ''}`}>
-      {/* Checkbox */}
-      <td className="py-3 pl-4 pr-2">
-        {onToggleSelect ? (
-          <input
-            type="checkbox"
-            checked={!!selected}
-            onChange={onToggleSelect}
-            className="cursor-pointer w-3.5 h-3.5 rounded accent-[#FA2D55]"
-          />
-        ) : (
-          <span className="block w-3.5 h-3.5" />
-        )}
-      </td>
       {/* # */}
-      <td className="py-3 pr-2 text-xs text-[#AEAEB2] tabular-nums">{index + 1}</td>
+      <td className="py-3 pl-5 pr-2 text-xs text-[#AEAEB2] tabular-nums">{index + 1}</td>
 
       {/* Source */}
       <td className="py-3 pr-4">

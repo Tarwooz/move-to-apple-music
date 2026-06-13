@@ -77,10 +77,9 @@ export default function Home() {
   const [retrying, setRetrying] = useState(false);
   const [retryProgress, setRetryProgress] = useState({ done: 0, total: 0 });
   const [textModal, setTextModal] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
 
-  // ── filter + retry/ai popovers ────────────────────────────────────
+  // ── filter + retry/ai/csv popovers ───────────────────────────────
   const [filterStatus, setFilterStatus] = useState<MatchStatus | 'all'>('all');
   const [retryPopoverOpen, setRetryPopoverOpen] = useState(false);
   const [retryIncUncertain, setRetryIncUncertain] = useState(false);
@@ -90,6 +89,10 @@ export default function Home() {
   const [aiIncUncertain, setAiIncUncertain] = useState(false);
   const [aiIncFailed, setAiIncFailed] = useState(true);
   const aiPopoverRef = useRef<HTMLDivElement>(null);
+  const [csvPopoverOpen, setCsvPopoverOpen] = useState(false);
+  const [csvIncMatched, setCsvIncMatched] = useState(true);
+  const [csvIncUncertain, setCsvIncUncertain] = useState(false);
+  const csvPopoverRef = useRef<HTMLDivElement>(null);
 
   // ── merge tab state ───────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('import');
@@ -118,6 +121,7 @@ export default function Home() {
     const handler = (e: MouseEvent) => {
       if (retryPopoverRef.current && !retryPopoverRef.current.contains(e.target as Node)) setRetryPopoverOpen(false);
       if (aiPopoverRef.current && !aiPopoverRef.current.contains(e.target as Node)) setAiPopoverOpen(false);
+      if (csvPopoverRef.current && !csvPopoverRef.current.contains(e.target as Node)) setCsvPopoverOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -281,10 +285,9 @@ export default function Home() {
     }
   }, [matches]);
 
-  const exportList = useCallback((format: 'csv' | 'txt') => {
-    const exportable = matches.filter((m) => m.status !== 'skipped' && m.selectedCandidate);
-    const toExport = selectedIds.size > 0 ? exportable.filter((m) => selectedIds.has(m.id)) : exportable;
-    const rows = toExport.map((m) => m.selectedCandidate!);
+  const exportList = useCallback((format: 'csv' | 'txt', statuses?: MatchStatus[]) => {
+    const allowed = statuses ?? (['matched', 'manual', 'uncertain'] as MatchStatus[]);
+    const rows = matches.filter((m) => allowed.includes(m.status) && m.selectedCandidate).map((m) => m.selectedCandidate!);
     if (!rows.length) { setError('没有可导出的歌曲'); return; }
     if (format === 'txt') {
       setCopied(false);
@@ -309,7 +312,7 @@ export default function Home() {
       a.download = totalParts > 1 ? `${base}-${p + 1}.csv` : `${base}.csv`;
       setTimeout(() => { a.click(); URL.revokeObjectURL(url); }, p * 300);
     }
-  }, [matches, playlistName, selectedIds]);
+  }, [matches, playlistName]);
 
   // ── merge logic ───────────────────────────────────────────────────
   const loadMusicPlaylists = useCallback(async () => {
@@ -374,11 +377,10 @@ export default function Home() {
     skipped: matches.filter((m) => m.status === 'skipped').length,
   };
   const visibleMatches = filterStatus === 'all' ? matches : matches.filter((m) => m.status === filterStatus);
-  const toWriteCount = matches.filter((m) => m.status !== 'skipped' && m.selectedCandidate).length;
-  const exportableVisible = visibleMatches.filter((m) => m.status !== 'skipped' && m.selectedCandidate);
-  const allVisibleSelected = exportableVisible.length > 0 && exportableVisible.every((m) => selectedIds.has(m.id));
-  const someVisibleSelected = exportableVisible.some((m) => selectedIds.has(m.id));
-  const csvLabel = selectedIds.size > 0 ? `导出选中（${selectedIds.size} 首）` : `导出 CSV（${toWriteCount} 首）`;
+  const countMatched = matches.filter((m) => (m.status === 'matched' || m.status === 'manual') && m.selectedCandidate).length;
+  const countUncertain = matches.filter((m) => m.status === 'uncertain' && m.selectedCandidate).length;
+  const csvExportCount = (csvIncMatched ? countMatched : 0) + (csvIncUncertain ? countUncertain : 0);
+  const toWriteCount = countMatched + countUncertain;
   const progressPct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const mergeTotalTracks = mergeSelected.reduce((sum, n) => {
     const pl = musicPlaylists.find((p) => p.name === n);
@@ -494,7 +496,7 @@ export default function Home() {
                 {/* Stats bar */}
                 <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] px-5 py-3.5 flex items-center gap-2 flex-wrap">
                   {/* Clickable filter pills */}
-                  <button onClick={() => { setStep('input'); setMatches([]); setPlaylist(null); setFilterStatus('all'); setSelectedIds(new Set()); }} className="cursor-pointer text-[11px] text-[#AEAEB2] hover:text-[#6E6E73] transition-colors mr-1">← 重新输入</button>
+                  <button onClick={() => { setStep('input'); setMatches([]); setPlaylist(null); setFilterStatus('all'); }} className="cursor-pointer text-[11px] text-[#AEAEB2] hover:text-[#6E6E73] transition-colors mr-1">← 重新输入</button>
                   <div className="w-px h-4 bg-[#E5E5EA]" />
                   <FilterPill label="共" value={stats.total} active={filterStatus === 'all'} onClick={() => setFilterStatus('all')} />
                   <div className="w-px h-4 bg-[#E5E5EA]" />
@@ -504,14 +506,44 @@ export default function Home() {
                   {stats.skipped > 0 && <FilterPill label="已跳过" value={stats.skipped} color="text-[#AEAEB2]" active={filterStatus === 'skipped'} onClick={() => setFilterStatus(filterStatus === 'skipped' ? 'all' : 'skipped')} />}
 
                   <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-                    <button
-                      onClick={() => exportList('csv')}
-                      disabled={toWriteCount === 0}
-                      title="导出已匹配歌单为 CSV，可导入 Soundiiz 等支持官方 API 的迁移网站"
-                      className="text-[12px] px-3.5 py-1.5 bg-[#007AFF] hover:bg-[#0066D6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
-                    >
-                      {csvLabel}
-                    </button>
+                    {/* CSV export with popover */}
+                    <div className="relative" ref={csvPopoverRef}>
+                      <button
+                        onClick={() => setCsvPopoverOpen((o) => !o)}
+                        disabled={toWriteCount === 0}
+                        className="text-[12px] px-3.5 py-1.5 bg-[#007AFF] hover:bg-[#0066D6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
+                      >
+                        导出 CSV（{csvExportCount} 首）▾
+                      </button>
+                      {csvPopoverOpen && (
+                        <div className="absolute left-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-[#F0F0F5] p-3 z-30">
+                          <p className="text-[11px] font-semibold text-[#6E6E73] uppercase tracking-wide mb-2">选择导出范围</p>
+                          <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+                            <input type="checkbox" checked={csvIncMatched} onChange={(e) => setCsvIncMatched(e.target.checked)} className="accent-[#007AFF]" />
+                            <span className="text-[12px] text-[#1D1D1F]">已匹配</span>
+                            <span className="ml-auto text-[11px] text-[#AEAEB2]">{countMatched} 首</span>
+                          </label>
+                          <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+                            <input type="checkbox" checked={csvIncUncertain} onChange={(e) => setCsvIncUncertain(e.target.checked)} className="accent-[#007AFF]" />
+                            <span className="text-[12px] text-[#1D1D1F]">待确认</span>
+                            <span className="ml-auto text-[11px] text-[#AEAEB2]">{countUncertain} 首</span>
+                          </label>
+                          <button
+                            onClick={() => {
+                              const statuses: MatchStatus[] = [];
+                              if (csvIncMatched) statuses.push('matched', 'manual');
+                              if (csvIncUncertain) statuses.push('uncertain');
+                              exportList('csv', statuses);
+                              setCsvPopoverOpen(false);
+                            }}
+                            disabled={csvExportCount === 0}
+                            className="mt-2 w-full text-[12px] py-2 bg-[#007AFF] hover:bg-[#0066D6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors cursor-pointer"
+                          >
+                            导出 {csvExportCount} 首
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={() => exportList('txt')}
                       disabled={toWriteCount === 0}
@@ -615,23 +647,7 @@ export default function Home() {
                   <table className="w-full table-fixed">
                     <thead>
                       <tr className="border-b border-[#F0F0F5]">
-                        <th className="py-2.5 pl-4 pr-2 w-8">
-                          <input
-                            type="checkbox"
-                            className="cursor-pointer w-3.5 h-3.5 rounded accent-[#FA2D55]"
-                            checked={allVisibleSelected}
-                            ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
-                            onChange={() => {
-                              setSelectedIds((prev) => {
-                                const next = new Set(prev);
-                                if (allVisibleSelected) exportableVisible.forEach((m) => next.delete(m.id));
-                                else exportableVisible.forEach((m) => next.add(m.id));
-                                return next;
-                              });
-                            }}
-                          />
-                        </th>
-                        <th className="py-2.5 pr-2 text-left w-10"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">#</span></th>
+                        <th className="py-2.5 pl-5 pr-2 text-left w-10"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">#</span></th>
                         <th className="py-2.5 pr-4 text-left w-36"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">原始</span></th>
                         <th className="py-2.5 pr-4 text-left w-24"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider whitespace-nowrap">状态</span></th>
                         <th className="py-2.5 pr-4 text-left w-48"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">Apple Music</span></th>
@@ -647,8 +663,6 @@ export default function Home() {
                           onSelectCandidate={handleSelectCandidate}
                           onSkip={handleSkip}
                           onManualSearch={handleManualSearch}
-                          selected={selectedIds.has(match.id)}
-                          onToggleSelect={match.selectedCandidate && match.status !== 'skipped' ? () => setSelectedIds((prev) => { const next = new Set(prev); next.has(match.id) ? next.delete(match.id) : next.add(match.id); return next; }) : undefined}
                         />
                       ))}
                     </tbody>
