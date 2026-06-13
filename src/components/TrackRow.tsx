@@ -135,27 +135,36 @@ export default function TrackRow({ match, index, onSelectCandidate, onSkip, onMa
             <button
               onClick={handleSearch}
               disabled={searching}
-              className="cursor-pointer text-[11px] px-2.5 py-1.5 bg-[#FA2D55] hover:bg-[#E0264C] disabled:opacity-50 text-white rounded-lg font-medium flex-shrink-0 transition-colors"
+              title="搜索"
+              className="cursor-pointer w-8 h-8 flex items-center justify-center bg-[#FA2D55] hover:bg-[#E0264C] disabled:opacity-50 text-white rounded-lg flex-shrink-0 transition-colors"
             >
-              {searching ? '…' : '搜'}
+              {searching
+                ? <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4" strokeDashoffset="10" /></svg>
+                : <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
+              }
             </button>
             {isUncertain && selectedCandidate && (
               <button
                 onClick={() => onSelectCandidate(match.id, selectedCandidate)}
-                className="cursor-pointer text-[11px] px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium flex-shrink-0 transition-colors"
+                title="确认匹配"
+                className="cursor-pointer w-8 h-8 flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg flex-shrink-0 transition-colors"
               >
-                ✓
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               </button>
             )}
             <button
               onClick={() => onSkip(match.id)}
-              className={`cursor-pointer text-[11px] px-2.5 py-1.5 rounded-lg font-medium flex-shrink-0 transition-colors ${
+              title={isSkipped ? '恢复' : '跳过'}
+              className={`cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg flex-shrink-0 transition-colors ${
                 isSkipped
                   ? 'bg-[#E5E5EA] text-[#6E6E73] hover:bg-[#D8D8DD]'
                   : 'bg-[#F5F5F7] text-[#6E6E73] hover:bg-[#E5E5EA] border border-[#E5E5EA]'
               }`}
             >
-              {isSkipped ? '恢复' : '跳'}
+              {isSkipped
+                ? <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                : <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+              }
             </button>
           </div>
 
