@@ -518,7 +518,7 @@ export default function Home() {
                         </button>
 
                         {retryPopoverOpen && !retrying && (
-                          <div className="absolute right-0 bottom-full mb-2 w-52 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-[#F0F0F5] p-3 z-30">
+                          <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-[#F0F0F5] p-3 z-30">
                             <p className="text-[11px] font-semibold text-[#6E6E73] uppercase tracking-wide mb-2">选择要重新搜索的状态</p>
                             <label className="flex items-center gap-2 py-1.5 cursor-pointer">
                               <input type="checkbox" checked={retryIncFailed} onChange={(e) => setRetryIncFailed(e.target.checked)} className="accent-[#FA2D55]" />
@@ -558,7 +558,7 @@ export default function Home() {
                           {aiRunning ? `AI 搜索中 ${aiProgress.done}/${aiProgress.total}...` : 'AI 辅助搜索 ▾'}
                         </button>
                         {aiPopoverOpen && !aiRunning && (
-                          <div className="absolute right-0 bottom-full mb-2 w-52 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-[#F0F0F5] p-3 z-30">
+                          <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-[#F0F0F5] p-3 z-30">
                             <p className="text-[11px] font-semibold text-[#6E6E73] uppercase tracking-wide mb-2">选择要 AI 搜索的状态</p>
                             <label className="flex items-center gap-2 py-1.5 cursor-pointer">
                               <input type="checkbox" checked={aiIncFailed} onChange={(e) => setAiIncFailed(e.target.checked)} className="accent-[#7F56D9]" />
