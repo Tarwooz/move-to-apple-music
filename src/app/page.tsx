@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { TrackMatch, Playlist, AppleMusicTrack, SourceTrack, MatchStatus } from '@/lib/types';
+import { searchTrack, searchITunes } from '@/lib/itunes';
 import TrackRow from '@/components/TrackRow';
 
 type Step = 'input' | 'searching' | 'preview';
@@ -167,15 +168,7 @@ export default function Home() {
         let apiResults: TrackMatch[] = [];
         if (uncached.length) {
           if (allMatches.length > 0) await new Promise((r) => setTimeout(r, batchDelay()));
-
-          const res2 = await fetch('/api/search-apple', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tracks: uncached }),
-          });
-          const data2 = await res2.json();
-          if (!res2.ok) throw new Error(data2.error);
-          apiResults = data2.matches;
+          apiResults = await Promise.all(uncached.map(searchTrack));
           mergeLSCache(apiResults.filter((m) => m.selectedCandidate));
         }
 
@@ -241,11 +234,9 @@ export default function Home() {
   }, []);
 
   const handleManualSearch = useCallback(async (matchId: string, query: string) => {
-    const res = await fetch(`/api/manual-search?${new URLSearchParams({ q: query })}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.candidates?.length) {
-      setMatches((prev) => prev.map((m) => m.id === matchId ? { ...m, candidates: data.candidates, selectedCandidate: data.candidates[0], status: 'manual' } : m));
+    const candidates = await searchITunes(query, 8);
+    if (candidates.length) {
+      setMatches((prev) => prev.map((m) => m.id === matchId ? { ...m, candidates, selectedCandidate: candidates[0], status: 'manual' } : m));
     }
   }, []);
 
@@ -259,17 +250,11 @@ export default function Home() {
       for (let i = 0; i < toRetry.length; i += SEARCH_BATCH) {
         if (i > 0) await new Promise((r) => setTimeout(r, batchDelay()));
         const batch = toRetry.slice(i, i + SEARCH_BATCH);
-        const res = await fetch('/api/search-apple', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tracks: batch.map((m) => m.source), forceRefresh: true }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        mergeLSCache(data.matches);
+        const newMatches = await Promise.all(batch.map((m) => searchTrack(m.source)));
+        mergeLSCache(newMatches);
         setMatches((prev) => {
           const next = [...prev];
-          data.matches.forEach((newMatch: TrackMatch, j: number) => {
+          newMatches.forEach((newMatch, j) => {
             const idx = prev.findIndex((m) => m.id === batch[j].id);
             if (idx !== -1) next[idx] = { ...newMatch, id: batch[j].id };
           });

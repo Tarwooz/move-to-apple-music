@@ -1,6 +1,8 @@
-import { AppleMusicTrack, SourceTrack } from './types';
+import { AppleMusicTrack, SourceTrack, TrackMatch, MatchStatus } from './types';
 
 const ITUNES_API = 'https://itunes.apple.com/search';
+const MATCH_THRESHOLD = 0.7;
+const UNCERTAIN_THRESHOLD = 0.4;
 
 export async function searchITunes(
   query: string,
@@ -18,11 +20,7 @@ export async function searchITunes(
   const timer = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const res = await fetch(`${ITUNES_API}?${params}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: controller.signal,
-      next: { revalidate: 3600 },
-    });
+    const res = await fetch(`${ITUNES_API}?${params}`, { signal: controller.signal });
     if (!res.ok) return [];
     const data = await res.json();
     return data.results ?? [];
@@ -38,12 +36,11 @@ export function buildQuery(track: SourceTrack): string {
   return `${track.artist} ${stripBrackets(track.title)}`;
 }
 
-// Strict check: title and artist must both have significant overlap (after stripping brackets)
 export function verifyMatch(source: SourceTrack, candidate: AppleMusicTrack): boolean {
   const norm = (s: string) =>
     s.toLowerCase()
-      .replace(/[\(（][^)）]*[\)）]/g, '') // strip brackets
-      .replace(/[^\w一-鿿]/g, '')  // keep alphanumeric + CJK
+      .replace(/[\(（][^)）]*[\)）]/g, '')
+      .replace(/[^\w一-鿿]/g, '')
       .trim();
 
   const srcTitle = norm(source.title);
@@ -52,7 +49,6 @@ export function verifyMatch(source: SourceTrack, candidate: AppleMusicTrack): bo
   const candArtist = norm(candidate.artistName);
 
   const titleOk = srcTitle.includes(candTitle) || candTitle.includes(srcTitle);
-  // Artist may be "A / B" (featuring), check each part
   const srcArtistParts = source.artist.split(/[/／,、&]/).map((p) => norm(p.trim()));
   const artistOk =
     srcArtist.includes(candArtist) ||
@@ -62,7 +58,6 @@ export function verifyMatch(source: SourceTrack, candidate: AppleMusicTrack): bo
   return titleOk && artistOk;
 }
 
-// Score how well an iTunes result matches source track (0-1)
 export function scoreMatch(source: SourceTrack, candidate: AppleMusicTrack): number {
   const normalize = (s: string) =>
     s.toLowerCase().replace(/[^\w\s]/g, '').trim();
@@ -89,4 +84,31 @@ export function scoreMatch(source: SourceTrack, candidate: AppleMusicTrack): num
   }
 
   return Math.min(score, 1);
+}
+
+export async function searchTrack(track: SourceTrack): Promise<TrackMatch> {
+  const query = buildQuery(track);
+  const candidates = await searchITunes(query, 5);
+
+  let status: MatchStatus = 'failed';
+  let selectedCandidate = null;
+
+  if (candidates.length > 0) {
+    const scored = candidates
+      .map((c) => ({ candidate: c, score: scoreMatch(track, c) }))
+      .sort((a, b) => b.score - a.score);
+
+    const best = scored[0];
+    if (best.score >= MATCH_THRESHOLD && verifyMatch(track, best.candidate)) {
+      status = 'matched';
+      selectedCandidate = best.candidate;
+    } else if (best.score >= UNCERTAIN_THRESHOLD) {
+      status = 'uncertain';
+      selectedCandidate = best.candidate;
+    }
+  }
+
+  const id = crypto.randomUUID();
+
+  return { id, source: track, status, candidates, selectedCandidate };
 }
