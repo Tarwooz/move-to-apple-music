@@ -8,6 +8,7 @@ type Step = 'input' | 'searching' | 'preview' | 'done';
 
 const SEARCH_BATCH = 20;
 const AI_BATCH = 20;
+const CSV_CHUNK = 200; // split exported CSV into files of this many songs
 
 export default function Home() {
   const [step, setStep] = useState<Step>('input');
@@ -23,6 +24,8 @@ export default function Home() {
   const [retrying, setRetrying] = useState(false);
   const [retryProgress, setRetryProgress] = useState({ done: 0, total: 0 });
   const [createStatus, setCreateStatus] = useState('');
+  const [textModal, setTextModal] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const fetchPlaylist = useCallback(async () => {
     setError('');
@@ -237,6 +240,46 @@ export default function Home() {
     }
   }, [matches, playlistName, saveSkipped]);
 
+  const exportList = useCallback((format: 'csv' | 'txt') => {
+    const rows = matches
+      .filter((m) => m.status !== 'skipped' && m.selectedCandidate)
+      .map((m) => m.selectedCandidate!);
+    if (!rows.length) { setError('没有可导出的歌曲'); return; }
+
+    // TXT: show in a modal for copy-paste instead of downloading
+    if (format === 'txt') {
+      setCopied(false);
+      setTextModal(rows.map((t) => `${t.trackName} - ${t.artistName}`).join('\n'));
+      return;
+    }
+
+    // CSV: download file(s) for upload. Split into chunks of CSV_CHUNK so each
+    // file fits importers' single-import limits (e.g. Soundiiz free = 200).
+    // Include Apple Music track id so importers that support platform+id
+    // "perfect match" can locate the exact catalog track by ID. ISRC reserved.
+    const esc = (s: string) => `"${(s ?? '').replace(/"/g, '""')}"`;
+    const header = 'Track name,Artist name,Album,ISRC,Apple Music – id';
+    const seen = new Set<number>();
+    const allLines = rows
+      .filter((t) => { if (seen.has(t.trackId)) return false; seen.add(t.trackId); return true; })
+      .map((t) =>
+        [t.trackName, t.artistName, t.collectionName, '', String(t.trackId)].map(esc).join(',')
+      );
+    const base = playlistName || 'playlist';
+    const totalParts = Math.ceil(allLines.length / CSV_CHUNK);
+    for (let p = 0; p < totalParts; p++) {
+      const chunk = allLines.slice(p * CSV_CHUNK, (p + 1) * CSV_CHUNK);
+      const content = '﻿' + [header, ...chunk].join('\n'); // BOM for Excel
+      const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = totalParts > 1 ? `${base}-${p + 1}.csv` : `${base}.csv`;
+      // stagger clicks so the browser doesn't drop all but the last download
+      setTimeout(() => { a.click(); URL.revokeObjectURL(url); }, p * 300);
+    }
+  }, [matches, playlistName]);
+
   const stats = {
     total: matches.length,
     matched: matches.filter((m) => m.status === 'matched' || m.status === 'manual').length,
@@ -377,6 +420,29 @@ export default function Home() {
               {stats.skipped > 0 && <StatPill label="已跳过" value={stats.skipped} color="text-[#AEAEB2]" />}
 
               <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  onClick={() => exportList('csv')}
+                  disabled={toWriteCount === 0}
+                  title="导出已匹配歌单为 CSV，可导入 Soundiiz / TuneMyMusic 等支持官方 API 的迁移网站"
+                  className="text-[12px] px-3.5 py-1.5 bg-[#007AFF] hover:bg-[#0066D6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
+                >
+                  导出 CSV（{toWriteCount} 首）
+                </button>
+                <button
+                  onClick={() => exportList('txt')}
+                  disabled={toWriteCount === 0}
+                  title="导出为纯文本（歌名 - 歌手），可粘贴到支持文本导入的网站"
+                  className="text-[12px] px-3.5 py-1.5 bg-white border border-[#D1D1D6] hover:bg-[#F5F5F7] disabled:opacity-50 text-[#1D1D1F] rounded-xl font-medium transition-colors"
+                >
+                  导出 TXT
+                </button>
+                <button
+                  onClick={() => window.open('https://www.tunemymusic.com/zh-CN/transfer', '_blank', 'noopener')}
+                  title="打开 TuneMyMusic，用导出的 CSV/文本导入到 Apple Music"
+                  className="text-[12px] px-3.5 py-1.5 bg-[#1D1D1F] hover:bg-[#3A3A3C] text-white rounded-xl font-medium transition-colors"
+                >
+                  打开 TuneMyMusic →
+                </button>
                 {(stats.uncertain > 0 || stats.failed > 0) && (
                   <button
                     onClick={retrySearch}
@@ -511,6 +577,62 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Text export modal — copy-paste list */}
+      {textModal !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => setTextModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#F0F0F5]">
+              <div>
+                <h3 className="text-[15px] font-bold text-[#1D1D1F]">复制歌单列表</h3>
+                <p className="text-[11px] text-[#AEAEB2] mt-0.5">{textModal.split('\n').length} 首 · 格式：歌名 - 歌手</p>
+              </div>
+              <button onClick={() => setTextModal(null)} className="text-[#AEAEB2] hover:text-[#6E6E73] text-[20px] leading-none">×</button>
+            </div>
+            <textarea
+              readOnly
+              value={textModal}
+              onFocus={(e) => e.target.select()}
+              className="flex-1 m-5 mb-3 p-3 bg-[#F5F5F7] rounded-xl text-[13px] text-[#1D1D1F] font-mono resize-none focus:outline-none focus:ring-2 focus:ring-[#FA2D55]"
+              style={{ minHeight: '240px' }}
+            />
+            <div className="flex items-center gap-2 px-5 pb-5">
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(textModal);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  } catch {
+                    setError('复制失败，请手动全选复制');
+                  }
+                }}
+                className="flex-1 bg-[#FA2D55] hover:bg-[#E0264C] text-white font-semibold py-2.5 rounded-xl text-[14px] transition-colors"
+              >
+                {copied ? '已复制 ✓' : '复制全部'}
+              </button>
+              <button
+                onClick={() => window.open('https://www.tunemymusic.com/zh-CN/transfer', '_blank', 'noopener')}
+                className="flex-1 bg-[#1D1D1F] hover:bg-[#3A3A3C] text-white font-semibold py-2.5 rounded-xl text-[14px] transition-colors"
+              >
+                打开 TuneMyMusic →
+              </button>
+              <button
+                onClick={() => setTextModal(null)}
+                className="px-4 py-2.5 bg-[#F5F5F7] hover:bg-[#E5E5EA] text-[#1D1D1F] font-medium rounded-xl text-[14px] transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
