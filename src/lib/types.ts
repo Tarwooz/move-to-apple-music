@@ -12,7 +12,7 @@ export interface AppleMusicTrack {
   trackName: string;
   artistName: string;
   collectionName: string;
-  trackTimeMillis: number;
+  trackTimeMillis?: number;
   previewUrl?: string;
   artworkUrl100?: string;
 }

@@ -14,25 +14,38 @@ const CSV_CHUNK = 200;
 const batchDelay = () => 5000 + Math.random() * 2000; // 5–7s random delay
 
 // ── localStorage cache helpers ────────────────────────────────────────────────
-const LS_CACHE = 'am-cache-v1';
+const LS_CACHE = 'am-cache-v2';
 const LS_SKIPPED = 'am-skipped-v1';
+
+type SlimCandidate = Pick<AppleMusicTrack, 'trackId' | 'trackName' | 'artistName' | 'collectionName' | 'artworkUrl100'>;
+type CacheEntry = { source: SourceTrack; status: MatchStatus; selectedCandidate: SlimCandidate | null };
 
 function lsKey(title: string, artist: string) {
   return `${title.trim().toLowerCase()}|||${artist.trim().toLowerCase()}`;
 }
 
-function loadLSCache(): Map<string, TrackMatch> {
+function slimCandidate(c: AppleMusicTrack): SlimCandidate {
+  return { trackId: c.trackId, trackName: c.trackName, artistName: c.artistName, collectionName: c.collectionName, artworkUrl100: c.artworkUrl100 };
+}
+
+function loadLSCache(): Map<string, CacheEntry> {
   try {
     const raw = localStorage.getItem(LS_CACHE);
     if (!raw) return new Map();
-    return new Map((JSON.parse(raw) as TrackMatch[]).map((m) => [lsKey(m.source.title, m.source.artist), m]));
+    return new Map((JSON.parse(raw) as CacheEntry[]).map((m) => [lsKey(m.source.title, m.source.artist), m]));
   } catch { return new Map(); }
 }
 
 function mergeLSCache(matches: TrackMatch[]) {
   try {
     const map = loadLSCache();
-    for (const m of matches) map.set(lsKey(m.source.title, m.source.artist), m);
+    for (const m of matches) {
+      map.set(lsKey(m.source.title, m.source.artist), {
+        source: m.source,
+        status: m.status,
+        selectedCandidate: m.selectedCandidate ? slimCandidate(m.selectedCandidate) : null,
+      });
+    }
     localStorage.setItem(LS_CACHE, JSON.stringify(Array.from(map.values())));
   } catch {}
 }
@@ -141,7 +154,7 @@ export default function Home() {
             return { id: crypto.randomUUID(), source: track, status: 'skipped', candidates: [], selectedCandidate: null };
           }
           const cached = cache.get(key);
-          return cached ? { ...cached, id: crypto.randomUUID() } : null;
+          return cached ? { ...cached, id: crypto.randomUUID(), candidates: [] } : null;
         });
 
         const uncached = batch.filter((_, j) => !cacheHits[j]);
