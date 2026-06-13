@@ -931,7 +931,7 @@ function FilterPill({ label, value, color = 'text-[#1D1D1F]', active, onClick }:
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 text-[12px] px-2 py-0.5 rounded-lg transition-colors ${active ? 'bg-[#1D1D1F]' : 'hover:bg-[#F5F5F7]'}`}
+      className={`cursor-pointer flex items-center gap-1.5 text-[12px] px-2 py-0.5 rounded-lg transition-colors ${active ? 'bg-[#1D1D1F]' : 'hover:bg-[#F5F5F7]'}`}
     >
       <span className={`font-semibold tabular-nums ${active ? 'text-white' : color}`}>{value}</span>
       <span className={active ? 'text-white/70' : 'text-[#AEAEB2]'}>{label}</span>
