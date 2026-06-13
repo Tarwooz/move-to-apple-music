@@ -33,7 +33,7 @@ export async function searchITunes(
 
 export function buildQuery(track: SourceTrack): string {
   const stripBrackets = (s: string) => s.replace(/[\(（][^)）]*[\)）]/g, '').trim();
-  return `${track.artist} ${stripBrackets(track.title)}`;
+  return `${stripBrackets(track.title)} ${track.artist}`;
 }
 
 export function verifyMatch(source: SourceTrack, candidate: AppleMusicTrack): boolean {
