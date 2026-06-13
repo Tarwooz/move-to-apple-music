@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { TrackMatch, Playlist, AppleMusicTrack } from '@/lib/types';
+import { TrackMatch, Playlist, AppleMusicTrack, SourceTrack } from '@/lib/types';
 import TrackRow from '@/components/TrackRow';
 
 type Step = 'input' | 'searching' | 'preview';
@@ -11,6 +11,43 @@ type MusicPlaylist = { name: string; trackCount: number };
 const SEARCH_BATCH = 20;
 const AI_BATCH = 20;
 const CSV_CHUNK = 200;
+const BATCH_DELAY = 2000; // ms between search batches (frontend rate limiting)
+
+// ── localStorage cache helpers ────────────────────────────────────────────────
+const LS_CACHE = 'am-cache-v1';
+const LS_SKIPPED = 'am-skipped-v1';
+
+function lsKey(title: string, artist: string) {
+  return `${title.trim().toLowerCase()}|||${artist.trim().toLowerCase()}`;
+}
+
+function loadLSCache(): Map<string, TrackMatch> {
+  try {
+    const raw = localStorage.getItem(LS_CACHE);
+    if (!raw) return new Map();
+    return new Map((JSON.parse(raw) as TrackMatch[]).map((m) => [lsKey(m.source.title, m.source.artist), m]));
+  } catch { return new Map(); }
+}
+
+function mergeLSCache(matches: TrackMatch[]) {
+  try {
+    const map = loadLSCache();
+    for (const m of matches) map.set(lsKey(m.source.title, m.source.artist), m);
+    localStorage.setItem(LS_CACHE, JSON.stringify(Array.from(map.values())));
+  } catch {}
+}
+
+function loadLSSkippedKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_SKIPPED);
+    if (!raw) return new Set();
+    return new Set((JSON.parse(raw) as SourceTrack[]).map((t) => lsKey(t.title, t.artist)));
+  } catch { return new Set(); }
+}
+
+function saveLSSkipped(tracks: SourceTrack[]) {
+  try { localStorage.setItem(LS_SKIPPED, JSON.stringify(tracks)); } catch {}
+}
 
 export default function Home() {
   // ── import tab state ──────────────────────────────────────────────
@@ -39,54 +76,17 @@ export default function Home() {
   const [mergeResult, setMergeResult] = useState('');
   const [mergeError, setMergeError] = useState('');
 
-  // ── auto-save (debounced) ─────────────────────────────────────────
-  const saveSkipped = useCallback(async (currentMatches: typeof matches) => {
-    const skippedTracks = currentMatches.filter((m) => m.status === 'skipped').map((m) => m.source);
-    if (!skippedTracks.length) return;
-    const res = await fetch('/api/save-skipped', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tracks: skippedTracks }),
-    });
-    const data = await res.json();
-    if (!res.ok) setError(data.error);
-  }, []);
-
-  const saveManualToCache = useCallback(async (currentMatches: typeof matches) => {
-    const manualMatches = currentMatches.filter((m) => m.status === 'manual' && m.selectedCandidate);
-    if (!manualMatches.length) return;
-    const res = await fetch('/api/save-cache', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matches: manualMatches }),
-    });
-    const data = await res.json();
-    if (!res.ok) setError(data.error);
-  }, []);
-
-  const saveAiToCache = useCallback(async (currentMatches: typeof matches) => {
-    const aiMatches = currentMatches.filter((m) => m.aiSuggestion && m.selectedCandidate && m.status !== 'failed');
-    if (!aiMatches.length) return;
-    const res = await fetch('/api/save-cache', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matches: aiMatches }),
-    });
-    const data = await res.json();
-    if (!res.ok) setError(data.error);
-  }, []);
-
+  // ── auto-save to localStorage (debounced, synchronous) ───────────
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!matches.length) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
-      saveManualToCache(matches);
-      saveAiToCache(matches);
-      saveSkipped(matches);
+      mergeLSCache(matches.filter((m) => m.selectedCandidate && m.status !== 'skipped'));
+      saveLSSkipped(matches.filter((m) => m.status === 'skipped').map((m) => m.source));
     }, 1500);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [matches, saveManualToCache, saveAiToCache, saveSkipped]);
+  }, [matches]);
 
   // ── import logic ──────────────────────────────────────────────────
   const fetchPlaylist = useCallback(async () => {
@@ -105,20 +105,51 @@ export default function Home() {
       setPlaylist(pl);
       setPlaylistName(pl.name || '迁移到appleMusic');
       setProgress({ done: 0, total: pl.tracks.length, label: '正在搜索 Apple Music...' });
+
+      const cache = loadLSCache();
+      const skippedKeys = loadLSSkippedKeys();
       const allMatches: TrackMatch[] = [];
+
       for (let i = 0; i < pl.tracks.length; i += SEARCH_BATCH) {
         const batch = pl.tracks.slice(i, i + SEARCH_BATCH);
-        const res2 = await fetch('/api/search-apple', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tracks: batch }),
+
+        // Resolve cache / skipped hits locally
+        const cacheHits = batch.map((track): TrackMatch | null => {
+          const key = lsKey(track.title, track.artist);
+          if (skippedKeys.has(key)) {
+            return { id: crypto.randomUUID(), source: track, status: 'skipped', candidates: [], selectedCandidate: null };
+          }
+          const cached = cache.get(key);
+          return cached ? { ...cached, id: crypto.randomUUID() } : null;
         });
-        const data2 = await res2.json();
-        if (!res2.ok) throw new Error(data2.error);
-        allMatches.push(...data2.matches);
-        setProgress({ done: Math.min(i + SEARCH_BATCH, pl.tracks.length), total: pl.tracks.length, label: '正在搜索 Apple Music...' });
+
+        const uncached = batch.filter((_, j) => !cacheHits[j]);
+
+        let apiResults: TrackMatch[] = [];
+        if (uncached.length) {
+          // Delay before each API batch (except the first) for rate limiting
+          if (allMatches.length > 0) await new Promise((r) => setTimeout(r, BATCH_DELAY));
+
+          const res2 = await fetch('/api/search-apple', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tracks: uncached }),
+          });
+          const data2 = await res2.json();
+          if (!res2.ok) throw new Error(data2.error);
+          apiResults = data2.matches;
+          mergeLSCache(apiResults);
+        }
+
+        // Interleave cache hits and API results in original order
+        let apiIdx = 0;
+        const batchResults = batch.map((_, j) => cacheHits[j] ?? apiResults[apiIdx++]);
+        allMatches.push(...batchResults);
+
         setMatches([...allMatches]);
+        setProgress({ done: Math.min(i + SEARCH_BATCH, pl.tracks.length), total: pl.tracks.length, label: '正在搜索 Apple Music...' });
       }
+
       setStep('preview');
     } catch (e: any) {
       setError(e.message);
@@ -145,6 +176,7 @@ export default function Home() {
         if (!res.ok) throw new Error(data.error);
         if (data.warnings) warnings.push(...data.warnings);
         setAiProgress({ done: Math.min(i + AI_BATCH, failedMatches.length), total: failedMatches.length });
+        mergeLSCache((data.improved ?? []).filter((u: any) => u.updated && u.selectedCandidate));
         setMatches((prev) =>
           prev.map((m) => {
             const upd = (data.improved ?? []).find((u: any) => u.id === m.id);
@@ -195,6 +227,7 @@ export default function Home() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
+        mergeLSCache(data.matches);
         setMatches((prev) => {
           const next = [...prev];
           data.matches.forEach((newMatch: TrackMatch, j: number) => {
