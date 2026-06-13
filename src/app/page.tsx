@@ -11,7 +11,7 @@ type MusicPlaylist = { name: string; trackCount: number };
 const SEARCH_BATCH = 5;  // matches server CONCURRENCY — keeps each API call under 2s
 const AI_BATCH = 20;
 const CSV_CHUNK = 200;
-const batchDelay = () => 1500 + Math.random() * 1500; // 1.5–3s random delay
+const batchDelay = () => 5000 + Math.random() * 2000; // 5–7s random delay
 
 // ── localStorage cache helpers ────────────────────────────────────────────────
 const LS_CACHE = 'am-cache-v1';
