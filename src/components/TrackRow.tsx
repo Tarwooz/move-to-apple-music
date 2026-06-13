@@ -72,14 +72,6 @@ export default function TrackRow({ match, index, onSelectCandidate, onSkip, onMa
           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${STATUS_DOT[status]}`} />
           <span className="text-[11px] text-[#6E6E73]">{STATUS_LABEL[status]}</span>
         </div>
-        {isUncertain && selectedCandidate && (
-          <button
-            onClick={() => onSelectCandidate(match.id, selectedCandidate)}
-            className="mt-1 text-[10px] px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 rounded-md font-medium transition-colors"
-          >
-            ✓ 确认
-          </button>
-        )}
         {aiSuggestion && (
           <div className="text-[10px] text-purple-400 mt-0.5 truncate" title={aiSuggestion}>AI 优化</div>
         )}
@@ -109,7 +101,7 @@ export default function TrackRow({ match, index, onSelectCandidate, onSkip, onMa
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => { setUseTitle(!useTitle); setManualQuery(''); }}
-              className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors truncate max-w-[120px] ${
+              className={`cursor-pointer text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors truncate max-w-[120px] ${
                 useTitle
                   ? 'bg-[#FA2D55] border-[#FA2D55] text-white'
                   : 'bg-white border-[#D1D1D6] text-[#AEAEB2] line-through'
@@ -120,7 +112,7 @@ export default function TrackRow({ match, index, onSelectCandidate, onSkip, onMa
             </button>
             <button
               onClick={() => { setUseArtist(!useArtist); setManualQuery(''); }}
-              className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors truncate max-w-[100px] ${
+              className={`cursor-pointer text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors truncate max-w-[100px] ${
                 useArtist
                   ? 'bg-[#1D1D1F] border-[#1D1D1F] text-white'
                   : 'bg-white border-[#D1D1D6] text-[#AEAEB2] line-through'
@@ -131,38 +123,46 @@ export default function TrackRow({ match, index, onSelectCandidate, onSkip, onMa
             </button>
           </div>
 
-          {/* Search input row */}
+          {/* Search row */}
           <div className="flex gap-1">
             <input
               value={manualQuery !== '' ? manualQuery : autoQuery}
               onChange={(e) => setManualQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="flex-1 min-w-0 text-[11px] text-[#1D1D1F] bg-[#F5F5F7] border border-[#E5E5EA] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#FA2D55] focus:border-[#FA2D55]"
+              className="flex-1 min-w-0 text-[11px] text-[#1D1D1F] bg-[#F5F5F7] border border-[#E5E5EA] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#FA2D55] focus:border-[#FA2D55] cursor-text"
               placeholder="搜索..."
             />
             <button
               onClick={handleSearch}
               disabled={searching}
-              className="text-[11px] px-2.5 py-1.5 bg-[#FA2D55] hover:bg-[#E0264C] disabled:opacity-50 text-white rounded-lg font-medium flex-shrink-0 transition-colors"
+              className="cursor-pointer text-[11px] px-2.5 py-1.5 bg-[#FA2D55] hover:bg-[#E0264C] disabled:opacity-50 text-white rounded-lg font-medium flex-shrink-0 transition-colors"
             >
               {searching ? '…' : '搜'}
             </button>
+            {isUncertain && selectedCandidate && (
+              <button
+                onClick={() => onSelectCandidate(match.id, selectedCandidate)}
+                className="cursor-pointer text-[11px] px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium flex-shrink-0 transition-colors"
+              >
+                ✓
+              </button>
+            )}
             <button
               onClick={() => onSkip(match.id)}
-              className={`text-[11px] px-2.5 py-1.5 rounded-lg font-medium flex-shrink-0 transition-colors ${
+              className={`cursor-pointer text-[11px] px-2.5 py-1.5 rounded-lg font-medium flex-shrink-0 transition-colors ${
                 isSkipped
                   ? 'bg-[#E5E5EA] text-[#6E6E73] hover:bg-[#D8D8DD]'
                   : 'bg-[#F5F5F7] text-[#6E6E73] hover:bg-[#E5E5EA] border border-[#E5E5EA]'
               }`}
             >
-              {isSkipped ? '恢复' : '跳过'}
+              {isSkipped ? '恢复' : '跳'}
             </button>
           </div>
 
-          {/* Candidate select */}
+          {/* Candidate select — visually distinct from search input */}
           {candidates.length > 0 && (
             <select
-              className="text-[11px] text-[#1D1D1F] bg-[#F5F5F7] border border-[#E5E5EA] rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-[#FA2D55] focus:border-[#FA2D55] cursor-pointer"
+              className="cursor-pointer text-[11px] text-[#1D1D1F] bg-white border-2 border-[#E5E5EA] hover:border-[#AEAEB2] rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-[#FA2D55] focus:border-[#FA2D55] transition-colors"
               value={selectedCandidate?.trackId ?? ''}
               onChange={(e) => {
                 const c = candidates.find((c) => String(c.trackId) === e.target.value);
