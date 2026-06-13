@@ -103,7 +103,7 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error);
       const pl: Playlist = data.playlist;
       setPlaylist(pl);
-      setPlaylistName('迁移到appleMusic');
+      setPlaylistName(pl.name || '迁移到appleMusic');
       setProgress({ done: 0, total: pl.tracks.length, label: '正在搜索 Apple Music...' });
       const allMatches: TrackMatch[] = [];
       for (let i = 0; i < pl.tracks.length; i += SEARCH_BATCH) {
