@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { TrackMatch, Playlist, AppleMusicTrack } from '@/lib/types';
 import TrackRow from '@/components/TrackRow';
 
@@ -179,8 +179,8 @@ export default function Home() {
     }
   }, [matches]);
 
-  const saveSkipped = useCallback(async () => {
-    const skippedTracks = matches.filter((m) => m.status === 'skipped').map((m) => m.source);
+  const saveSkipped = useCallback(async (currentMatches: typeof matches) => {
+    const skippedTracks = currentMatches.filter((m) => m.status === 'skipped').map((m) => m.source);
     if (!skippedTracks.length) return null;
     const res = await fetch('/api/save-skipped', {
       method: 'POST',
@@ -190,10 +190,10 @@ export default function Home() {
     const data = await res.json();
     if (!res.ok) setError(data.error);
     return data;
-  }, [matches]);
+  }, []);
 
-  const saveManualToCache = useCallback(async () => {
-    const manualMatches = matches.filter((m) => m.status === 'manual' && m.selectedCandidate);
+  const saveManualToCache = useCallback(async (currentMatches: typeof matches) => {
+    const manualMatches = currentMatches.filter((m) => m.status === 'manual' && m.selectedCandidate);
     if (!manualMatches.length) return;
     const res = await fetch('/api/save-cache', {
       method: 'POST',
@@ -201,12 +201,11 @@ export default function Home() {
       body: JSON.stringify({ matches: manualMatches }),
     });
     const data = await res.json();
-    if (res.ok) alert(`已保存 ${data.saved} 首手动匹配到本地缓存`);
-    else setError(data.error);
-  }, [matches]);
+    if (!res.ok) setError(data.error);
+  }, []);
 
-  const saveAiToCache = useCallback(async () => {
-    const aiMatches = matches.filter((m) => m.aiSuggestion && m.selectedCandidate && m.status !== 'failed');
+  const saveAiToCache = useCallback(async (currentMatches: typeof matches) => {
+    const aiMatches = currentMatches.filter((m) => m.aiSuggestion && m.selectedCandidate && m.status !== 'failed');
     if (!aiMatches.length) return;
     const res = await fetch('/api/save-cache', {
       method: 'POST',
@@ -214,9 +213,20 @@ export default function Home() {
       body: JSON.stringify({ matches: aiMatches }),
     });
     const data = await res.json();
-    if (res.ok) alert(`已保存 ${data.saved} 首 AI 匹配到本地缓存`);
-    else setError(data.error);
-  }, [matches]);
+    if (!res.ok) setError(data.error);
+  }, []);
+
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!matches.length) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      saveManualToCache(matches);
+      saveAiToCache(matches);
+      saveSkipped(matches);
+    }, 1500);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [matches, saveManualToCache, saveAiToCache, saveSkipped]);
 
   const createPlaylist = useCallback(async () => {
     const toAdd = matches.filter((m) => m.status !== 'skipped' && m.selectedCandidate).map((m) => m.selectedCandidate!);
@@ -231,7 +241,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      await saveSkipped();
+      await saveSkipped(matches);
       setStep('done');
       setCreateStatus(`成功创建歌单「${playlistName}」，共 ${data.count} 首歌曲`);
     } catch (e: any) {
@@ -423,7 +433,7 @@ export default function Home() {
                 <button
                   onClick={() => exportList('csv')}
                   disabled={toWriteCount === 0}
-                  title="导出已匹配歌单为 CSV，可导入 Soundiiz / TuneMyMusic 等支持官方 API 的迁移网站"
+                  title="导出已匹配歌单为 CSV，可导入 Soundiiz 等支持官方 API 的迁移网站"
                   className="text-[12px] px-3.5 py-1.5 bg-[#007AFF] hover:bg-[#0066D6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
                 >
                   导出 CSV（{toWriteCount} 首）
@@ -437,11 +447,11 @@ export default function Home() {
                   导出 TXT
                 </button>
                 <button
-                  onClick={() => window.open('https://www.tunemymusic.com/zh-CN/transfer', '_blank', 'noopener')}
-                  title="打开 TuneMyMusic，用导出的 CSV/文本导入到 Apple Music"
+                  onClick={() => window.open('https://soundiiz.com/', '_blank', 'noopener')}
+                  title="打开 Soundiiz，用导出的 CSV 导入到 Apple Music"
                   className="text-[12px] px-3.5 py-1.5 bg-[#1D1D1F] hover:bg-[#3A3A3C] text-white rounded-xl font-medium transition-colors"
                 >
-                  打开 TuneMyMusic →
+                  打开 Soundiiz →
                 </button>
                 {(stats.uncertain > 0 || stats.failed > 0) && (
                   <button
@@ -464,33 +474,6 @@ export default function Home() {
                     {aiRunning
                       ? `AI 搜索中 ${aiProgress.done}/${aiProgress.total}...`
                       : `AI 辅助搜索（${stats.uncertain + stats.failed} 首）`}
-                  </button>
-                )}
-                {stats.manual > 0 && (
-                  <button
-                    onClick={saveManualToCache}
-                    className="text-[12px] px-3.5 py-1.5 bg-[#34C759] hover:bg-[#2DB34A] text-white rounded-xl font-medium transition-colors"
-                  >
-                    保存手动匹配
-                  </button>
-                )}
-                {stats.aiMatched > 0 && (
-                  <button
-                    onClick={saveAiToCache}
-                    className="text-[12px] px-3.5 py-1.5 bg-[#7F56D9] hover:bg-[#6941C6] text-white rounded-xl font-medium transition-colors"
-                  >
-                    保存 AI 匹配
-                  </button>
-                )}
-                {stats.skipped > 0 && (
-                  <button
-                    onClick={async () => {
-                      const data = await saveSkipped();
-                      if (data) alert(`已记录 ${data.saved} 首跳过歌曲`);
-                    }}
-                    className="text-[12px] px-3.5 py-1.5 bg-[#8E8E93] hover:bg-[#6E6E73] text-white rounded-xl font-medium transition-colors"
-                  >
-                    保存跳过记录
                   </button>
                 )}
               </div>
@@ -618,7 +601,7 @@ export default function Home() {
                 {copied ? '已复制 ✓' : '复制全部'}
               </button>
               <button
-                onClick={() => window.open('https://www.tunemymusic.com/zh-CN/transfer', '_blank', 'noopener')}
+                onClick={() => window.open('https://soundiiz.com/', '_blank', 'noopener')}
                 className="flex-1 bg-[#1D1D1F] hover:bg-[#3A3A3C] text-white font-semibold py-2.5 rounded-xl text-[14px] transition-colors"
               >
                 打开 TuneMyMusic →
