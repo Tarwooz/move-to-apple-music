@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { TrackMatch, Playlist, AppleMusicTrack, SourceTrack } from '@/lib/types';
+import { TrackMatch, Playlist, AppleMusicTrack, SourceTrack, MatchStatus } from '@/lib/types';
 import TrackRow from '@/components/TrackRow';
 
 type Step = 'input' | 'searching' | 'preview';
@@ -66,6 +66,13 @@ export default function Home() {
   const [textModal, setTextModal] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // ── filter + retry popover ────────────────────────────────────────
+  const [filterStatus, setFilterStatus] = useState<MatchStatus | 'all'>('all');
+  const [retryPopoverOpen, setRetryPopoverOpen] = useState(false);
+  const [retryIncUncertain, setRetryIncUncertain] = useState(false);
+  const [retryIncFailed, setRetryIncFailed] = useState(true);
+  const retryPopoverRef = useRef<HTMLDivElement>(null);
+
   // ── merge tab state ───────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('import');
   const [musicPlaylists, setMusicPlaylists] = useState<MusicPlaylist[]>([]);
@@ -87,6 +94,18 @@ export default function Home() {
     }, 1500);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [matches]);
+
+  // Close retry popover on outside click
+  useEffect(() => {
+    if (!retryPopoverOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (retryPopoverRef.current && !retryPopoverRef.current.contains(e.target as Node)) {
+        setRetryPopoverOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [retryPopoverOpen]);
 
   // ── import logic ──────────────────────────────────────────────────
   const fetchPlaylist = useCallback(async () => {
@@ -210,8 +229,8 @@ export default function Home() {
     }
   }, []);
 
-  const retrySearch = useCallback(async () => {
-    const toRetry = matches.filter((m) => m.status === 'failed' || m.status === 'uncertain');
+  const retrySearch = useCallback(async (statuses: MatchStatus[]) => {
+    const toRetry = matches.filter((m) => statuses.includes(m.status));
     if (!toRetry.length) return;
     setRetrying(true);
     setError('');
@@ -336,6 +355,7 @@ export default function Home() {
     failed: matches.filter((m) => m.status === 'failed').length,
     skipped: matches.filter((m) => m.status === 'skipped').length,
   };
+  const visibleMatches = filterStatus === 'all' ? matches : matches.filter((m) => m.status === filterStatus);
   const toWriteCount = matches.filter((m) => m.status !== 'skipped' && m.selectedCandidate).length;
   const progressPct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const mergeTotalTracks = mergeSelected.reduce((sum, n) => {
@@ -470,12 +490,14 @@ export default function Home() {
 
                 {/* Stats bar */}
                 <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] px-5 py-3.5 flex items-center gap-2 flex-wrap">
-                  <StatPill label="共" value={stats.total} />
+                  {/* Clickable filter pills */}
+                  <FilterPill label="共" value={stats.total} active={filterStatus === 'all'} onClick={() => setFilterStatus('all')} />
                   <div className="w-px h-4 bg-[#E5E5EA]" />
-                  <StatPill label="已匹配" value={stats.matched} color="text-emerald-500" />
-                  <StatPill label="待确认" value={stats.uncertain} color="text-amber-500" />
-                  <StatPill label="未找到" value={stats.failed} color="text-red-400" />
-                  {stats.skipped > 0 && <StatPill label="已跳过" value={stats.skipped} color="text-[#AEAEB2]" />}
+                  <FilterPill label="已匹配" value={stats.matched} color="text-emerald-500" active={filterStatus === 'matched' || filterStatus === 'manual'} onClick={() => setFilterStatus(filterStatus === 'matched' ? 'all' : 'matched')} />
+                  <FilterPill label="待确认" value={stats.uncertain} color="text-amber-500" active={filterStatus === 'uncertain'} onClick={() => setFilterStatus(filterStatus === 'uncertain' ? 'all' : 'uncertain')} />
+                  <FilterPill label="未找到" value={stats.failed} color="text-red-400" active={filterStatus === 'failed'} onClick={() => setFilterStatus(filterStatus === 'failed' ? 'all' : 'failed')} />
+                  {stats.skipped > 0 && <FilterPill label="已跳过" value={stats.skipped} color="text-[#AEAEB2]" active={filterStatus === 'skipped'} onClick={() => setFilterStatus(filterStatus === 'skipped' ? 'all' : 'skipped')} />}
+
                   <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
                     <button
                       onClick={() => exportList('csv')}
@@ -498,15 +520,48 @@ export default function Home() {
                     >
                       打开 Soundiiz →
                     </button>
+
+                    {/* Retry search with popover */}
                     {(stats.uncertain > 0 || stats.failed > 0) && (
-                      <button
-                        onClick={retrySearch}
-                        disabled={retrying || aiRunning}
-                        className="text-[12px] px-3.5 py-1.5 bg-[#1D1D1F] hover:bg-[#3A3A3C] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
-                      >
-                        {retrying ? `重试中 ${retryProgress.done}/${retryProgress.total}...` : `重新搜索（${stats.uncertain + stats.failed} 首）`}
-                      </button>
+                      <div className="relative" ref={retryPopoverRef}>
+                        <button
+                          onClick={() => setRetryPopoverOpen((o) => !o)}
+                          disabled={retrying || aiRunning}
+                          className="text-[12px] px-3.5 py-1.5 bg-[#1D1D1F] hover:bg-[#3A3A3C] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
+                        >
+                          {retrying ? `重试中 ${retryProgress.done}/${retryProgress.total}...` : '重新搜索 ▾'}
+                        </button>
+
+                        {retryPopoverOpen && !retrying && (
+                          <div className="absolute right-0 bottom-full mb-2 w-52 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-[#F0F0F5] p-3 z-30">
+                            <p className="text-[11px] font-semibold text-[#6E6E73] uppercase tracking-wide mb-2">选择要重新搜索的状态</p>
+                            <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+                              <input type="checkbox" checked={retryIncFailed} onChange={(e) => setRetryIncFailed(e.target.checked)} className="accent-[#FA2D55]" />
+                              <span className="text-[13px] text-[#1D1D1F]">未找到</span>
+                              <span className="ml-auto text-[11px] text-[#AEAEB2]">{stats.failed} 首</span>
+                            </label>
+                            <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+                              <input type="checkbox" checked={retryIncUncertain} onChange={(e) => setRetryIncUncertain(e.target.checked)} className="accent-[#FA2D55]" />
+                              <span className="text-[13px] text-[#1D1D1F]">待确认</span>
+                              <span className="ml-auto text-[11px] text-[#AEAEB2]">{stats.uncertain} 首</span>
+                            </label>
+                            <button
+                              onClick={() => {
+                                const statuses: MatchStatus[] = [];
+                                if (retryIncFailed) statuses.push('failed');
+                                if (retryIncUncertain) statuses.push('uncertain');
+                                if (statuses.length) { retrySearch(statuses); setRetryPopoverOpen(false); }
+                              }}
+                              disabled={!retryIncFailed && !retryIncUncertain}
+                              className="mt-2 w-full text-[12px] py-2 bg-[#1D1D1F] hover:bg-[#3A3A3C] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
+                            >
+                              开始重新搜索
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
+
                     {(stats.uncertain > 0 || stats.failed > 0) && (
                       <button
                         onClick={runAiAssist}
@@ -534,7 +589,7 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody>
-                      {matches.map((match, i) => (
+                      {visibleMatches.map((match, i) => (
                         <TrackRow
                           key={match.id}
                           match={match}
@@ -855,5 +910,17 @@ function StatPill({ label, value, color = 'text-[#1D1D1F]' }: { label: string; v
       <span className={`font-semibold tabular-nums ${color}`}>{value}</span>
       <span className="text-[#AEAEB2]">{label}</span>
     </span>
+  );
+}
+
+function FilterPill({ label, value, color = 'text-[#1D1D1F]', active, onClick }: { label: string; value: number; color?: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 text-[12px] px-2 py-0.5 rounded-lg transition-colors ${active ? 'bg-[#1D1D1F]' : 'hover:bg-[#F5F5F7]'}`}
+    >
+      <span className={`font-semibold tabular-nums ${active ? 'text-white' : color}`}>{value}</span>
+      <span className={active ? 'text-white/70' : 'text-[#AEAEB2]'}>{label}</span>
+    </button>
   );
 }
