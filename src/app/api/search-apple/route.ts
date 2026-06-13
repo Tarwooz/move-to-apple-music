@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
   try {
     const results: TrackMatch[] = [];
     for (let i = 0; i < tracks.length; i += CONCURRENCY) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 1000));
       const batch = await Promise.all(tracks.slice(i, i + CONCURRENCY).map(searchTrack));
       results.push(...batch);
     }
