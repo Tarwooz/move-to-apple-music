@@ -14,7 +14,7 @@ const CSV_CHUNK = 200;
 const batchDelay = () => 5000 + Math.random() * 2000; // 5–7s random delay
 
 // ── localStorage cache helpers ────────────────────────────────────────────────
-const LS_CACHE = 'am-cache-v2';
+const LS_CACHE = 'am-cache-v1';
 const LS_SKIPPED = 'am-skipped-v1';
 
 type SlimCandidate = Pick<AppleMusicTrack, 'trackId' | 'trackName' | 'artistName' | 'collectionName' | 'artworkUrl100'>;
@@ -31,18 +31,8 @@ function slimCandidate(c: AppleMusicTrack): SlimCandidate {
 function loadLSCache(): Map<string, CacheEntry> {
   try {
     const raw = localStorage.getItem(LS_CACHE);
-    if (raw) return new Map((JSON.parse(raw) as CacheEntry[]).map((m) => [lsKey(m.source.title, m.source.artist), m]));
-    // Migrate from v1
-    const v1 = localStorage.getItem('am-cache-v1');
-    if (!v1) return new Map();
-    const entries: CacheEntry[] = (JSON.parse(v1) as TrackMatch[]).map((m) => ({
-      source: m.source,
-      status: m.status,
-      selectedCandidate: m.selectedCandidate ? slimCandidate(m.selectedCandidate as AppleMusicTrack) : null,
-    }));
-    localStorage.setItem(LS_CACHE, JSON.stringify(entries));
-    localStorage.removeItem('am-cache-v1');
-    return new Map(entries.map((m) => [lsKey(m.source.title, m.source.artist), m]));
+    if (!raw) return new Map();
+    return new Map((JSON.parse(raw) as CacheEntry[]).map((m) => [lsKey(m.source.title, m.source.artist), m]));
   } catch { return new Map(); }
 }
 
