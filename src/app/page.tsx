@@ -77,6 +77,7 @@ export default function Home() {
   const [retrying, setRetrying] = useState(false);
   const [retryProgress, setRetryProgress] = useState({ done: 0, total: 0 });
   const [textModal, setTextModal] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
 
   // ── filter + retry/ai popovers ────────────────────────────────────
@@ -281,7 +282,9 @@ export default function Home() {
   }, [matches]);
 
   const exportList = useCallback((format: 'csv' | 'txt') => {
-    const rows = matches.filter((m) => m.status !== 'skipped' && m.selectedCandidate).map((m) => m.selectedCandidate!);
+    const exportable = matches.filter((m) => m.status !== 'skipped' && m.selectedCandidate);
+    const toExport = selectedIds.size > 0 ? exportable.filter((m) => selectedIds.has(m.id)) : exportable;
+    const rows = toExport.map((m) => m.selectedCandidate!);
     if (!rows.length) { setError('没有可导出的歌曲'); return; }
     if (format === 'txt') {
       setCopied(false);
@@ -306,7 +309,7 @@ export default function Home() {
       a.download = totalParts > 1 ? `${base}-${p + 1}.csv` : `${base}.csv`;
       setTimeout(() => { a.click(); URL.revokeObjectURL(url); }, p * 300);
     }
-  }, [matches, playlistName]);
+  }, [matches, playlistName, selectedIds]);
 
   // ── merge logic ───────────────────────────────────────────────────
   const loadMusicPlaylists = useCallback(async () => {
@@ -372,6 +375,10 @@ export default function Home() {
   };
   const visibleMatches = filterStatus === 'all' ? matches : matches.filter((m) => m.status === filterStatus);
   const toWriteCount = matches.filter((m) => m.status !== 'skipped' && m.selectedCandidate).length;
+  const exportableVisible = visibleMatches.filter((m) => m.status !== 'skipped' && m.selectedCandidate);
+  const allVisibleSelected = exportableVisible.length > 0 && exportableVisible.every((m) => selectedIds.has(m.id));
+  const someVisibleSelected = exportableVisible.some((m) => selectedIds.has(m.id));
+  const csvLabel = selectedIds.size > 0 ? `导出选中（${selectedIds.size} 首）` : `导出 CSV（${toWriteCount} 首）`;
   const progressPct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const mergeTotalTracks = mergeSelected.reduce((sum, n) => {
     const pl = musicPlaylists.find((p) => p.name === n);
@@ -487,7 +494,7 @@ export default function Home() {
                 {/* Stats bar */}
                 <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] px-5 py-3.5 flex items-center gap-2 flex-wrap">
                   {/* Clickable filter pills */}
-                  <button onClick={() => { setStep('input'); setMatches([]); setPlaylist(null); setFilterStatus('all'); }} className="cursor-pointer text-[11px] text-[#AEAEB2] hover:text-[#6E6E73] transition-colors mr-1">← 重新输入</button>
+                  <button onClick={() => { setStep('input'); setMatches([]); setPlaylist(null); setFilterStatus('all'); setSelectedIds(new Set()); }} className="cursor-pointer text-[11px] text-[#AEAEB2] hover:text-[#6E6E73] transition-colors mr-1">← 重新输入</button>
                   <div className="w-px h-4 bg-[#E5E5EA]" />
                   <FilterPill label="共" value={stats.total} active={filterStatus === 'all'} onClick={() => setFilterStatus('all')} />
                   <div className="w-px h-4 bg-[#E5E5EA]" />
@@ -503,7 +510,7 @@ export default function Home() {
                       title="导出已匹配歌单为 CSV，可导入 Soundiiz 等支持官方 API 的迁移网站"
                       className="text-[12px] px-3.5 py-1.5 bg-[#007AFF] hover:bg-[#0066D6] disabled:bg-[#E5E5EA] disabled:text-[#AEAEB2] text-white rounded-xl font-medium transition-colors"
                     >
-                      导出 CSV（{toWriteCount} 首）
+                      {csvLabel}
                     </button>
                     <button
                       onClick={() => exportList('txt')}
@@ -608,7 +615,23 @@ export default function Home() {
                   <table className="w-full table-fixed">
                     <thead>
                       <tr className="border-b border-[#F0F0F5]">
-                        <th className="py-2.5 pl-5 pr-2 text-left w-10"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">#</span></th>
+                        <th className="py-2.5 pl-4 pr-2 w-8">
+                          <input
+                            type="checkbox"
+                            className="cursor-pointer w-3.5 h-3.5 rounded accent-[#FA2D55]"
+                            checked={allVisibleSelected}
+                            ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
+                            onChange={() => {
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (allVisibleSelected) exportableVisible.forEach((m) => next.delete(m.id));
+                                else exportableVisible.forEach((m) => next.add(m.id));
+                                return next;
+                              });
+                            }}
+                          />
+                        </th>
+                        <th className="py-2.5 pr-2 text-left w-10"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">#</span></th>
                         <th className="py-2.5 pr-4 text-left w-36"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">原始</span></th>
                         <th className="py-2.5 pr-4 text-left w-24"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider whitespace-nowrap">状态</span></th>
                         <th className="py-2.5 pr-4 text-left w-48"><span className="text-[10px] font-semibold text-[#AEAEB2] uppercase tracking-wider">Apple Music</span></th>
@@ -624,6 +647,8 @@ export default function Home() {
                           onSelectCandidate={handleSelectCandidate}
                           onSkip={handleSkip}
                           onManualSearch={handleManualSearch}
+                          selected={selectedIds.has(match.id)}
+                          onToggleSelect={match.selectedCandidate && match.status !== 'skipped' ? () => setSelectedIds((prev) => { const next = new Set(prev); next.has(match.id) ? next.delete(match.id) : next.add(match.id); return next; }) : undefined}
                         />
                       ))}
                     </tbody>
